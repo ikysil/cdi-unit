@@ -79,12 +79,6 @@ public class WeldTestUrlDeployment implements Deployment {
 		}
 
 		try {
-			Class.forName("javax.faces.view.ViewScoped");
-			extensions.add(createMetadata(new ViewScopeExtension(), ViewScopeExtension.class.getName()));
-		} catch (ClassNotFoundException ignore) {
-		}
-
-		try {
 			Class.forName("javax.servlet.http.HttpServletRequest");
 			classesToProcess.add(InRequestInterceptor.class);
 			classesToProcess.add(InSessionInterceptor.class);
