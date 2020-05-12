@@ -24,9 +24,7 @@ import org.jboss.weld.metadata.BeansXmlImpl;
 import org.jboss.weld.resources.spi.ResourceLoader;
 import org.jglue.cdiunit.*;
 import org.jglue.cdiunit.internal.easymock.EasyMockExtension;
-import org.jglue.cdiunit.internal.jsf.ViewScopeExtension;
 import org.jglue.cdiunit.internal.mockito.MockitoExtension;
-import org.jglue.cdiunit.internal.servlet.*;
 import org.mockito.Mock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +46,6 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.security.CodeSource;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class WeldTestUrlDeployment implements Deployment {
 	private final BeanDeploymentArchive beanDeploymentArchive;
@@ -67,42 +64,24 @@ public class WeldTestUrlDeployment implements Deployment {
 		Set<String> discoveredClasses = new LinkedHashSet<>();
 		Set<String> alternatives = new HashSet<>();
 		discoveredClasses.add(testConfiguration.getTestClass().getName());
-		Set<Class<?>> classesToProcess = new LinkedHashSet<>();
 		Set<Class<?>> classesProcessed = new HashSet<>();
 		Set<Class<?>> classesToIgnore = findMockedClassesOfTest(testConfiguration.getTestClass());
 
-		classesToProcess.add(testConfiguration.getTestClass());
+		discoveryContext.processBean(testConfiguration.getTestClass());
 
 		ServiceLoader<DiscoveryExtension> discoveryExtensions = ServiceLoader.load(DiscoveryExtension.class);
 		for (DiscoveryExtension extension: discoveryExtensions) {
 			extension.bootstrapExtensions(discoveryContext);
 		}
 
-		try {
-			Class.forName("javax.servlet.http.HttpServletRequest");
-			classesToProcess.add(InRequestInterceptor.class);
-			classesToProcess.add(InSessionInterceptor.class);
-			classesToProcess.add(InConversationInterceptor.class);
-			classesToProcess.add(CdiUnitInitialListenerProducer.class);
-			classesToProcess.add(MockServletContextImpl.class);
-			classesToProcess.add(MockHttpSessionImpl.class);
-			classesToProcess.add(MockHttpServletRequestImpl.class);
-			classesToProcess.add(MockHttpServletResponseImpl.class);
+		testConfiguration.getAdditionalClasses().forEach(discoveryContext::processBean);
 
-			// If this is an old version of weld then add the producers
-			try {
-				Class.forName("org.jboss.weld.bean.AbstractSyntheticBean");
-			} catch (ClassNotFoundException e) {
-				classesToProcess.add(ServletObjectsProducer.class);
+		while (true) {
+			Optional<Class<?>> nextToProcess = discoveryContext.nextToProcess();
+			if (!nextToProcess.isPresent()) {
+				break;
 			}
-		} catch (ClassNotFoundException ignore) {
-		}
-
-		classesToProcess.addAll(testConfiguration.getAdditionalClasses());
-
-		while (!classesToProcess.isEmpty()) {
-
-			Class<?> c = classesToProcess.iterator().next();
+			final Class<?> c = nextToProcess.get();
 
 			if ((isCdiClass(c) || Extension.class.isAssignableFrom(c)) && !classesProcessed.contains(c) && !c.isPrimitive()
 				&& !classesToIgnore.contains(c)) {
@@ -132,9 +111,9 @@ public class WeldTestUrlDeployment implements Deployment {
 
 				AdditionalClasses additionalClasses = c.getAnnotation(AdditionalClasses.class);
 				if (additionalClasses != null) {
-					Collections.addAll(classesToProcess, additionalClasses.value());
+					Arrays.stream(additionalClasses.value()).forEach(discoveryContext::processBean);
 					for (String lateBound : additionalClasses.late()) {
-						classesToProcess.add(loadClass(lateBound));
+						discoveryContext.processBean(loadClass(lateBound));
 					}
 				}
 
@@ -143,11 +122,10 @@ public class WeldTestUrlDeployment implements Deployment {
 					URL[] urls = Arrays.stream(additionalClasspaths.value())
 						.map(this::getClasspathURL)
 						.toArray(URL[]::new);
-					List<Class<?>> classes = scanner.getClassNamesForClasspath(urls)
+					scanner.getClassNamesForClasspath(urls)
 						.stream()
 						.map(this::loadClass)
-						.collect(Collectors.toList());
-					classesToProcess.addAll(classes);
+						.forEach(discoveryContext::processBean);
 				}
 
 				AdditionalPackages additionalPackages = c.getAnnotation(AdditionalPackages.class);
@@ -159,11 +137,10 @@ public class WeldTestUrlDeployment implements Deployment {
 						// It might be more efficient to scan all packageNames at once, but we
 						// might pick up classes from a different package's classpath entry, which
 						// would be a change in behaviour (but perhaps less surprising?).
-						List<Class<?>> classes = scanner.getClassNamesForPackage(packageName, url)
+						scanner.getClassNamesForPackage(packageName, url)
 							.stream()
 							.map(this::loadClass)
-							.collect(Collectors.toList());
-						classesToProcess.addAll(classes);
+							.forEach(discoveryContext::processBean);
 					}
 				}
 
@@ -178,7 +155,7 @@ public class WeldTestUrlDeployment implements Deployment {
 				ActivatedAlternatives alternativeClasses = c.getAnnotation(ActivatedAlternatives.class);
 				if (alternativeClasses != null) {
 					for (Class<?> alternativeClass : alternativeClasses.value()) {
-						classesToProcess.add(alternativeClass);
+						discoveryContext.processBean(alternativeClass);
 						if (!isAlternativeStereotype(alternativeClass)) {
 							alternatives.add(alternativeClass.getName());
 						}
@@ -187,13 +164,13 @@ public class WeldTestUrlDeployment implements Deployment {
 
 				for (Annotation a : c.getAnnotations()) {
 					if (!a.annotationType().getPackage().getName().equals("org.jglue.cdiunit")) {
-						classesToProcess.add(a.annotationType());
+						discoveryContext.processBean(a.annotationType());
 					}
 				}
 
 				Type superClass = c.getGenericSuperclass();
 				if (superClass != null && superClass != Object.class) {
-					addClassesToProcess(classesToProcess, superClass);
+					discoveryContext.processBean(superClass);
 				}
 
 				for (Field field : c.getDeclaredFields()) {
@@ -201,10 +178,10 @@ public class WeldTestUrlDeployment implements Deployment {
 						addClassesToProcess(classesToIgnore, field.getGenericType());
 					}
 					if (field.isAnnotationPresent(Inject.class) || field.isAnnotationPresent(Produces.class)) {
-						addClassesToProcess(classesToProcess, field.getGenericType());
+						discoveryContext.processBean(field.getGenericType());
 					}
 					if (field.getType().equals(Provider.class) || field.getType().equals(Instance.class)) {
-						addClassesToProcess(classesToProcess, field.getGenericType());
+						discoveryContext.processBean(field.getGenericType());
 					}
 				}
 				for (Method method : c.getDeclaredMethods()) {
@@ -213,16 +190,16 @@ public class WeldTestUrlDeployment implements Deployment {
 					}
 					if (method.isAnnotationPresent(Inject.class) || method.isAnnotationPresent(Produces.class)) {
 						for (Type param : method.getGenericParameterTypes()) {
-							addClassesToProcess(classesToProcess, param);
+							discoveryContext.processBean(param);
 						}
 						// TODO PERF we might be adding classes which we already processed
-						addClassesToProcess(classesToProcess, method.getGenericReturnType());
+						discoveryContext.processBean(method.getGenericReturnType());
 
 					}
 				}
 			}
 
-			classesToProcess.remove(c);
+			discoveryContext.processed(c);
 		}
 
 		beansXml.getEnabledAlternativeStereotypes().add(
@@ -398,6 +375,8 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		private final Collection<Metadata<Extension>> extensions = new ArrayList<>();
 
+		private final Set<Class<?>> classesToProcess = new LinkedHashSet<>();
+
 		public Context(final TestConfiguration testConfiguration) {
 			this.testConfiguration = testConfiguration;
 		}
@@ -407,14 +386,38 @@ public class WeldTestUrlDeployment implements Deployment {
 			return testConfiguration;
 		}
 
+		public Optional<Class<?>> nextToProcess() {
+			if (classesToProcess.isEmpty()) {
+				return Optional.empty();
+			}
+			return Optional.of(classesToProcess.iterator().next());
+		}
+
+		public void processed(Class<?> c) {
+			classesToProcess.remove(c);
+		}
+
 		@Override
 		public void processBean(String className) {
-
+			try {
+				processBean(Class.forName(className));
+			} catch (ClassNotFoundException ignore) {
+			}
 		}
 
 		@Override
 		public void processBean(Type type) {
+			if (type instanceof Class) {
+				classesToProcess.add((Class<?>) type);
+			}
 
+			if (type instanceof ParameterizedType) {
+				ParameterizedType ptype = (ParameterizedType) type;
+				classesToProcess.add((Class<?>) ptype.getRawType());
+				for (Type arg : ptype.getActualTypeArguments()) {
+					processBean(arg);
+				}
+			}
 		}
 
 		@Override
