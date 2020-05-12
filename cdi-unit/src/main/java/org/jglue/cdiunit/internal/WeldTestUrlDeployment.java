@@ -24,7 +24,6 @@ import org.jboss.weld.metadata.BeansXmlImpl;
 import org.jboss.weld.resources.spi.ResourceLoader;
 import org.jglue.cdiunit.*;
 import org.jglue.cdiunit.internal.easymock.EasyMockExtension;
-import org.mockito.Mock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,13 +63,14 @@ public class WeldTestUrlDeployment implements Deployment {
 		Set<String> alternatives = new HashSet<>();
 		discoveredClasses.add(testConfiguration.getTestClass().getName());
 		Set<Class<?>> classesProcessed = new HashSet<>();
-		Set<Class<?>> classesToIgnore = findMockedClassesOfTest(testConfiguration.getTestClass());
+		findMockedClassesOfTest(testConfiguration.getTestClass()).forEach(discoveryContext::ignoreBean);
 
 		discoveryContext.processBean(testConfiguration.getTestClass());
 
 		ServiceLoader<DiscoveryExtension> discoveryExtensions = ServiceLoader.load(DiscoveryExtension.class);
 		for (DiscoveryExtension extension: discoveryExtensions) {
 			extension.bootstrapExtensions(discoveryContext);
+			extension.process(discoveryContext, testConfiguration.getTestClass());
 		}
 
 		testConfiguration.getAdditionalClasses().forEach(discoveryContext::processBean);
@@ -83,7 +83,7 @@ public class WeldTestUrlDeployment implements Deployment {
 			final Class<?> c = nextToProcess.get();
 
 			if ((isCdiClass(c) || Extension.class.isAssignableFrom(c)) && !classesProcessed.contains(c) && !c.isPrimitive()
-				&& !classesToIgnore.contains(c)) {
+				&& !discoveryContext.isIgnored(c)) {
 				classesProcessed.add(c);
 				if (!c.isAnnotation()) {
 					discoveredClasses.add(c.getName());
@@ -145,9 +145,9 @@ public class WeldTestUrlDeployment implements Deployment {
 
 				IgnoredClasses ignoredClasses = c.getAnnotation(IgnoredClasses.class);
 				if (ignoredClasses != null) {
-					Collections.addAll(classesToIgnore, ignoredClasses.value());
+					Arrays.stream(ignoredClasses.value()).forEach(discoveryContext::ignoreBean);
 					for (String lateBound : ignoredClasses.late()) {
-						classesToIgnore.add(loadClass(lateBound));
+						discoveryContext.ignoreBean(loadClass(lateBound));
 					}
 				}
 
@@ -174,7 +174,7 @@ public class WeldTestUrlDeployment implements Deployment {
 
 				for (Field field : c.getDeclaredFields()) {
 					if (field.isAnnotationPresent(IgnoredClasses.class)) {
-						addClassesToProcess(classesToIgnore, field.getGenericType());
+						discoveryContext.ignoreBean(field.getGenericType());
 					}
 					if (field.isAnnotationPresent(Inject.class) || field.isAnnotationPresent(Produces.class)) {
 						discoveryContext.processBean(field.getGenericType());
@@ -185,7 +185,7 @@ public class WeldTestUrlDeployment implements Deployment {
 				}
 				for (Method method : c.getDeclaredMethods()) {
 					if (method.isAnnotationPresent(IgnoredClasses.class)) {
-						addClassesToProcess(classesToIgnore, method.getGenericReturnType());
+						discoveryContext.ignoreBean(method.getGenericReturnType());
 					}
 					if (method.isAnnotationPresent(Inject.class) || method.isAnnotationPresent(Produces.class)) {
 						for (Type param : method.getGenericParameterTypes()) {
@@ -303,17 +303,6 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		try {
 			for (Field field : testClass.getDeclaredFields()) {
-				if (field.isAnnotationPresent(Mock.class)) {
-					Class<?> type = field.getType();
-					mockedClasses.add(type);
-				}
-			}
-		} catch (NoClassDefFoundError ignore) {
-			// no Mockito
-		}
-
-		try {
-			for (Field field : testClass.getDeclaredFields()) {
 				if (field.isAnnotationPresent(org.easymock.Mock.class)) {
 					Class<?> type = field.getType();
 					mockedClasses.add(type);
@@ -369,6 +358,8 @@ public class WeldTestUrlDeployment implements Deployment {
 		private final Collection<Metadata<Extension>> extensions = new ArrayList<>();
 
 		private final Set<Class<?>> classesToProcess = new LinkedHashSet<>();
+
+		private final Set<Class<?>> classesToIgnore = new LinkedHashSet<>();
 
 		public Context(final TestConfiguration testConfiguration) {
 			this.testConfiguration = testConfiguration;
@@ -435,12 +426,29 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		@Override
 		public void ignoreBean(String className) {
-
+			try {
+				processBean(Class.forName(className));
+			} catch (ClassNotFoundException ignore) {
+			}
 		}
 
 		@Override
 		public void ignoreBean(Type type) {
+			if (type instanceof Class) {
+				classesToIgnore.add((Class<?>) type);
+			}
 
+			if (type instanceof ParameterizedType) {
+				ParameterizedType ptype = (ParameterizedType) type;
+				classesToIgnore.add((Class<?>) ptype.getRawType());
+				for (Type arg : ptype.getActualTypeArguments()) {
+					processBean(arg);
+				}
+			}
+		}
+
+		public boolean isIgnored(Class<?> c) {
+			return classesToIgnore.contains(c);
 		}
 
 		@Override
