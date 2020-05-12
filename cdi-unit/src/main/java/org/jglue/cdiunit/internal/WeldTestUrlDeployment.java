@@ -40,6 +40,7 @@ import javax.enterprise.inject.spi.Extension;
 import javax.inject.Inject;
 import javax.inject.Provider;
 import javax.interceptor.Interceptor;
+
 import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
@@ -61,6 +62,8 @@ public class WeldTestUrlDeployment implements Deployment {
 		cdiClasspathEntries.addAll(scanner.getBeanArchives());
 		BeansXml beansXml = createBeansXml();
 
+		Context discoveryContext = new Context(testConfiguration);
+
 		Set<String> discoveredClasses = new LinkedHashSet<>();
 		Set<String> alternatives = new HashSet<>();
 		discoveredClasses.add(testConfiguration.getTestClass().getName());
@@ -69,7 +72,11 @@ public class WeldTestUrlDeployment implements Deployment {
 		Set<Class<?>> classesToIgnore = findMockedClassesOfTest(testConfiguration.getTestClass());
 
 		classesToProcess.add(testConfiguration.getTestClass());
-		extensions.add(createMetadata(new TestScopeExtension(testConfiguration), TestScopeExtension.class.getName()));
+
+		ServiceLoader<DiscoveryExtension> discoveryExtensions = ServiceLoader.load(DiscoveryExtension.class);
+		for (DiscoveryExtension extension: discoveryExtensions) {
+			extension.bootstrapExtensions(discoveryContext);
+		}
 
 		try {
 			Class.forName("javax.enterprise.inject.spi.ProducerFactory");
@@ -110,7 +117,7 @@ public class WeldTestUrlDeployment implements Deployment {
 			Class<?> c = classesToProcess.iterator().next();
 
 			if ((isCdiClass(c) || Extension.class.isAssignableFrom(c)) && !classesProcessed.contains(c) && !c.isPrimitive()
-					&& !classesToIgnore.contains(c)) {
+				&& !classesToIgnore.contains(c)) {
 				classesProcessed.add(c);
 				if (!c.isAnnotation()) {
 					discoveredClasses.add(c.getName());
@@ -146,12 +153,12 @@ public class WeldTestUrlDeployment implements Deployment {
 				AdditionalClasspaths additionalClasspaths = c.getAnnotation(AdditionalClasspaths.class);
 				if (additionalClasspaths != null) {
 					URL[] urls = Arrays.stream(additionalClasspaths.value())
-							.map(this::getClasspathURL)
-							.toArray(URL[]::new);
+						.map(this::getClasspathURL)
+						.toArray(URL[]::new);
 					List<Class<?>> classes = scanner.getClassNamesForClasspath(urls)
-							.stream()
-							.map(this::loadClass)
-							.collect(Collectors.toList());
+						.stream()
+						.map(this::loadClass)
+						.collect(Collectors.toList());
 					classesToProcess.addAll(classes);
 				}
 
@@ -165,9 +172,9 @@ public class WeldTestUrlDeployment implements Deployment {
 						// might pick up classes from a different package's classpath entry, which
 						// would be a change in behaviour (but perhaps less surprising?).
 						List<Class<?>> classes = scanner.getClassNamesForPackage(packageName, url)
-								.stream()
-								.map(this::loadClass)
-								.collect(Collectors.toList());
+							.stream()
+							.map(this::loadClass)
+							.collect(Collectors.toList());
 						classesToProcess.addAll(classes);
 					}
 				}
@@ -231,7 +238,7 @@ public class WeldTestUrlDeployment implements Deployment {
 		}
 
 		beansXml.getEnabledAlternativeStereotypes().add(
-				createMetadata(ProducesAlternative.class.getName(), ProducesAlternative.class.getName()));
+			createMetadata(ProducesAlternative.class.getName(), ProducesAlternative.class.getName()));
 
 		for (String alternative : alternatives) {
 			beansXml.getEnabledAlternativeClasses().add(createMetadata(alternative, alternative));
@@ -250,6 +257,8 @@ public class WeldTestUrlDeployment implements Deployment {
 		}
 
 		extensions.add(createMetadata(new WeldSEBeanRegistrant(), WeldSEBeanRegistrant.class.getName()));
+
+		extensions.addAll(discoveryContext.getExtensions());
 
 		beanDeploymentArchive = new BeanDeploymentArchiveImpl("cdi-unit" + UUID.randomUUID(), discoveredClasses, beansXml);
 		beanDeploymentArchive.getServices().add(ResourceLoader.class, resourceLoader);
@@ -301,17 +310,17 @@ public class WeldTestUrlDeployment implements Deployment {
 			// The constructor for BeansXmlImpl has added more parameters in newer Weld versions. The parameter list
 			// is truncated in older version of Weld where the number of parameters is shorter, thus omitting the
 			// newer parameters.
-			Object[] initArgs = new Object[] {
-					new ArrayList<Metadata<String>>(), new ArrayList<Metadata<String>>(),
-					new ArrayList<Metadata<String>>(), new ArrayList<Metadata<String>>(), Scanning.EMPTY_SCANNING,
-					// These were added in Weld 2.0:
-					new URL("file:cdi-unit"), annotatedDiscoveryMode(), "cdi-unit",
-					// isTrimmed: added in Weld 2.4.2 [WELD-2314]:
-					false
+			Object[] initArgs = new Object[]{
+				new ArrayList<Metadata<String>>(), new ArrayList<Metadata<String>>(),
+				new ArrayList<Metadata<String>>(), new ArrayList<Metadata<String>>(), Scanning.EMPTY_SCANNING,
+				// These were added in Weld 2.0:
+				new URL("file:cdi-unit"), annotatedDiscoveryMode(), "cdi-unit",
+				// isTrimmed: added in Weld 2.4.2 [WELD-2314]:
+				false
 			};
 			Constructor<?> beansXmlConstructor = BeansXmlImpl.class.getConstructors()[0];
 			return (BeansXml) beansXmlConstructor.newInstance(
-					Arrays.copyOfRange(initArgs, 0, beansXmlConstructor.getParameterCount()));
+				Arrays.copyOfRange(initArgs, 0, beansXmlConstructor.getParameterCount()));
 		} catch (MalformedURLException | ReflectiveOperationException e) {
 			throw new RuntimeException(e);
 		}
@@ -319,13 +328,13 @@ public class WeldTestUrlDeployment implements Deployment {
 
 	private void addClassesToProcess(Collection<Class<?>> classesToProcess, Type type) {
 		if (type instanceof Class) {
-			classesToProcess.add((Class<?>)type);
+			classesToProcess.add((Class<?>) type);
 		}
 
 		if (type instanceof ParameterizedType) {
-			ParameterizedType ptype = (ParameterizedType)type;
-			classesToProcess.add((Class<?>)ptype.getRawType());
-			for(Type arg : ptype.getActualTypeArguments()) {
+			ParameterizedType ptype = (ParameterizedType) type;
+			classesToProcess.add((Class<?>) ptype.getRawType());
+			for (Type arg : ptype.getActualTypeArguments()) {
 				addClassesToProcess(classesToProcess, arg);
 			}
 		}
@@ -360,7 +369,7 @@ public class WeldTestUrlDeployment implements Deployment {
 
 	private URL getClasspathURL(Class<?> clazz) {
 		CodeSource codeSource = clazz.getProtectionDomain()
-				.getCodeSource();
+			.getCodeSource();
 		return codeSource != null ? codeSource.getLocation() : null;
 	}
 
@@ -394,4 +403,111 @@ public class WeldTestUrlDeployment implements Deployment {
 	public ServiceRegistry getServices() {
 		return serviceRegistry;
 	}
+
+	private static class Context implements DiscoveryExtension.Context {
+
+		private final TestConfiguration testConfiguration;
+
+		private final Collection<Metadata<Extension>> extensions = new ArrayList<>();
+
+		public Context(final TestConfiguration testConfiguration) {
+			this.testConfiguration = testConfiguration;
+		}
+
+		@Override
+		public TestConfiguration getTestConfiguration() {
+			return testConfiguration;
+		}
+
+		@Override
+		public void processBean(String className) {
+
+		}
+
+		@Override
+		public void processBean(Type type) {
+
+		}
+
+		@Override
+		public void processPackage(String className) {
+
+		}
+
+		@Override
+		public void processPackage(Type type) {
+
+		}
+
+		@Override
+		public void processClassPath(String className) {
+
+		}
+
+		@Override
+		public void processClassPath(Type type) {
+
+		}
+
+		@Override
+		public void ignoreBean(String className) {
+
+		}
+
+		@Override
+		public void ignoreBean(Type type) {
+
+		}
+
+		@Override
+		public void enableAlternative(String className) {
+
+		}
+
+		@Override
+		public void enableAlternative(Type type) {
+
+		}
+
+		@Override
+		public void enableDecorator(String className) {
+
+		}
+
+		@Override
+		public void enableDecorator(Type type) {
+
+		}
+
+		@Override
+		public void enableInterceptor(String className) {
+
+		}
+
+		@Override
+		public void enableInterceptor(Type type) {
+
+		}
+
+		@Override
+		public void enableAlternativeStereotype(String className) {
+
+		}
+
+		@Override
+		public void enableAlternativeStereotype(Type type) {
+
+		}
+
+		@Override
+		public void extension(Extension extension, String location) {
+			extensions.add(createMetadata(extension, location));
+		}
+
+		public Collection<Metadata<Extension>> getExtensions() {
+			return extensions;
+		}
+
+	}
+
 }
