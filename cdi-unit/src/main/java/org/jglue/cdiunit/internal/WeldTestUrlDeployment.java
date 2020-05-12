@@ -79,12 +79,6 @@ public class WeldTestUrlDeployment implements Deployment {
 		}
 
 		try {
-			Class.forName("javax.enterprise.inject.spi.ProducerFactory");
-			extensions.add(createMetadata(new ProducerConfigExtension(testConfiguration), ProducerConfigExtension.class.getName()));
-		} catch (ClassNotFoundException ignore) {
-		}
-
-		try {
 			Class.forName("javax.faces.view.ViewScoped");
 			extensions.add(createMetadata(new ViewScopeExtension(), ViewScopeExtension.class.getName()));
 		} catch (ClassNotFoundException ignore) {

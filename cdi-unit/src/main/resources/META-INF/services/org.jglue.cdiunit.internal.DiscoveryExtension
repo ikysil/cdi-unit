@@ -1,2 +1,3 @@
 # The order of the implementations matches the original order in WeldTestUrlDeployment
 org.jglue.cdiunit.internal.testscope.TestScopeDiscoveryExtension
+org.jglue.cdiunit.internal.producerconfig.ProducerConfigDiscoveryExtension
