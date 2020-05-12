@@ -24,7 +24,6 @@ import org.jboss.weld.metadata.BeansXmlImpl;
 import org.jboss.weld.resources.spi.ResourceLoader;
 import org.jglue.cdiunit.*;
 import org.jglue.cdiunit.internal.easymock.EasyMockExtension;
-import org.jglue.cdiunit.internal.mockito.MockitoExtension;
 import org.mockito.Mock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -207,12 +206,6 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		for (String alternative : alternatives) {
 			beansXml.getEnabledAlternativeClasses().add(createMetadata(alternative, alternative));
-		}
-
-		try {
-			Class.forName("org.mockito.Mock");
-			extensions.add(createMetadata(new MockitoExtension(), MockitoExtension.class.getName()));
-		} catch (ClassNotFoundException ignore) {
 		}
 
 		try {
