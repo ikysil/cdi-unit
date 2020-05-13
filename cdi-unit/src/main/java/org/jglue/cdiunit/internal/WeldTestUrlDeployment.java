@@ -22,14 +22,13 @@ import org.jboss.weld.bootstrap.spi.*;
 import org.jboss.weld.environment.se.WeldSEBeanRegistrant;
 import org.jboss.weld.metadata.BeansXmlImpl;
 import org.jboss.weld.resources.spi.ResourceLoader;
-import org.jglue.cdiunit.*;
+import org.jglue.cdiunit.IgnoredClasses;
+import org.jglue.cdiunit.ProducesAlternative;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.enterprise.inject.Alternative;
 import javax.enterprise.inject.Instance;
 import javax.enterprise.inject.Produces;
-import javax.enterprise.inject.Stereotype;
 import javax.enterprise.inject.spi.Extension;
 import javax.inject.Inject;
 import javax.inject.Provider;
@@ -42,6 +41,7 @@ import java.net.URL;
 import java.security.CodeSource;
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public class WeldTestUrlDeployment implements Deployment {
 	private final BeanDeploymentArchive beanDeploymentArchive;
@@ -55,10 +55,9 @@ public class WeldTestUrlDeployment implements Deployment {
 		cdiClasspathEntries.addAll(scanner.getBeanArchives());
 		BeansXml beansXml = createBeansXml();
 
-		Context discoveryContext = new Context(beansXml, testConfiguration);
+		Context discoveryContext = new Context(scanner, beansXml, testConfiguration);
 
 		Set<String> discoveredClasses = new LinkedHashSet<>();
-		Set<String> alternatives = new HashSet<>();
 		discoveredClasses.add(testConfiguration.getTestClass().getName());
 		Set<Class<?>> classesProcessed = new HashSet<>();
 
@@ -83,59 +82,6 @@ public class WeldTestUrlDeployment implements Deployment {
 
 				for (DiscoveryExtension extension: discoveryExtensions) {
 					extension.process(discoveryContext, c);
-				}
-
-				AdditionalClasses additionalClasses = c.getAnnotation(AdditionalClasses.class);
-				if (additionalClasses != null) {
-					Arrays.stream(additionalClasses.value()).forEach(discoveryContext::processBean);
-					for (String lateBound : additionalClasses.late()) {
-						discoveryContext.processBean(loadClass(lateBound));
-					}
-				}
-
-				AdditionalClasspaths additionalClasspaths = c.getAnnotation(AdditionalClasspaths.class);
-				if (additionalClasspaths != null) {
-					URL[] urls = Arrays.stream(additionalClasspaths.value())
-						.map(this::getClasspathURL)
-						.toArray(URL[]::new);
-					scanner.getClassNamesForClasspath(urls)
-						.stream()
-						.map(this::loadClass)
-						.forEach(discoveryContext::processBean);
-				}
-
-				AdditionalPackages additionalPackages = c.getAnnotation(AdditionalPackages.class);
-				if (additionalPackages != null) {
-					for (Class<?> additionalPackage : additionalPackages.value()) {
-						final String packageName = additionalPackage.getPackage().getName();
-						URL url = getClasspathURL(additionalPackage);
-
-						// It might be more efficient to scan all packageNames at once, but we
-						// might pick up classes from a different package's classpath entry, which
-						// would be a change in behaviour (but perhaps less surprising?).
-						scanner.getClassNamesForPackage(packageName, url)
-							.stream()
-							.map(this::loadClass)
-							.forEach(discoveryContext::processBean);
-					}
-				}
-
-				IgnoredClasses ignoredClasses = c.getAnnotation(IgnoredClasses.class);
-				if (ignoredClasses != null) {
-					Arrays.stream(ignoredClasses.value()).forEach(discoveryContext::ignoreBean);
-					for (String lateBound : ignoredClasses.late()) {
-						discoveryContext.ignoreBean(loadClass(lateBound));
-					}
-				}
-
-				ActivatedAlternatives alternativeClasses = c.getAnnotation(ActivatedAlternatives.class);
-				if (alternativeClasses != null) {
-					for (Class<?> alternativeClass : alternativeClasses.value()) {
-						discoveryContext.processBean(alternativeClass);
-						if (!isAlternativeStereotype(alternativeClass)) {
-							alternatives.add(alternativeClass.getName());
-						}
-					}
 				}
 
 				for (Annotation a : c.getAnnotations()) {
@@ -181,7 +127,7 @@ public class WeldTestUrlDeployment implements Deployment {
 		beansXml.getEnabledAlternativeStereotypes().add(
 			createMetadata(ProducesAlternative.class.getName(), ProducesAlternative.class.getName()));
 
-		for (String alternative : alternatives) {
+		for (String alternative : discoveryContext.getAlternatives()) {
 			beansXml.getEnabledAlternativeClasses().add(createMetadata(alternative, alternative));
 		}
 
@@ -198,14 +144,6 @@ public class WeldTestUrlDeployment implements Deployment {
 			}
 		}
 
-	}
-
-	private Class<?> loadClass(String name) {
-		try {
-			return getClass().getClassLoader().loadClass(name);
-		} catch (ClassNotFoundException e) {
-			throw new RuntimeException(e);
-		}
 	}
 
 	private static <T> Metadata<T> createMetadata(T value, String location) {
@@ -255,7 +193,7 @@ public class WeldTestUrlDeployment implements Deployment {
 		}
 	}
 
-	private URL getClasspathURL(Class<?> clazz) {
+	private static URL getClasspathURL(Class<?> clazz) {
 		CodeSource codeSource = clazz.getProtectionDomain()
 			.getCodeSource();
 		return codeSource != null ? codeSource.getLocation() : null;
@@ -264,10 +202,6 @@ public class WeldTestUrlDeployment implements Deployment {
 	private boolean isCdiClass(Class<?> c) {
 		URL location = getClasspathURL(c);
 		return location != null && cdiClasspathEntries.contains(location);
-	}
-
-	private boolean isAlternativeStereotype(Class<?> c) {
-		return c.isAnnotationPresent(Stereotype.class) && c.isAnnotationPresent(Alternative.class);
 	}
 
 	@Override
@@ -294,6 +228,8 @@ public class WeldTestUrlDeployment implements Deployment {
 
 	private static class Context implements DiscoveryExtension.Context {
 
+		private final ClasspathScanner scanner;
+
 		private final BeansXml beansXml;
 
 		private final TestConfiguration testConfiguration;
@@ -304,7 +240,10 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		private final Set<Class<?>> classesToIgnore = new LinkedHashSet<>();
 
-		public Context(final BeansXml beansXml, final TestConfiguration testConfiguration) {
+		private final Set<String> alternatives = new LinkedHashSet<>();
+
+		public Context(ClasspathScanner scanner, final BeansXml beansXml, final TestConfiguration testConfiguration) {
+			this.scanner = scanner;
 			this.beansXml = beansXml;
 			this.testConfiguration = testConfiguration;
 		}
@@ -353,26 +292,6 @@ public class WeldTestUrlDeployment implements Deployment {
 		}
 
 		@Override
-		public void processPackage(String className) {
-
-		}
-
-		@Override
-		public void processPackage(Type type) {
-
-		}
-
-		@Override
-		public void processClassPath(String className) {
-
-		}
-
-		@Override
-		public void processClassPath(Type type) {
-
-		}
-
-		@Override
 		public void ignoreBean(String className) {
 			try {
 				processBean(Class.forName(className));
@@ -391,12 +310,16 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		@Override
 		public void enableAlternative(String className) {
-
+			alternatives.add(className);
 		}
 
 		@Override
-		public void enableAlternative(Type type) {
+		public void enableAlternative(Class<?> alternativeClass) {
+			enableAlternative(alternativeClass.getName());
+		}
 
+		public Collection<String> getAlternatives() {
+			return alternatives;
 		}
 
 		@Override
@@ -436,6 +359,43 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		public Collection<Metadata<Extension>> getExtensions() {
 			return extensions;
+		}
+
+		@Override
+		public Collection<Class<?>> scanPackages(Collection<Class<?>> baseClasses) {
+			final Collection<Class<?>> result = new LinkedHashSet<>();
+			for (Class<?> baseClass : baseClasses) {
+				final String packageName = baseClass.getPackage().getName();
+				final URL url = getClasspathURL(baseClass);
+
+				// It might be more efficient to scan all packageNames at once, but we
+				// might pick up classes from a different package's classpath entry, which
+				// would be a change in behaviour (but perhaps less surprising?).
+				scanner.getClassNamesForPackage(packageName, url)
+					.stream()
+					.map(this::loadClass)
+					.collect(Collectors.toCollection(() -> result));
+			}
+			return result;
+		}
+
+		@Override
+		public Collection<Class<?>> scanBeanArchives(Collection<Class<?>> baseClasses) {
+			URL[] urls = baseClasses.stream()
+				.map(WeldTestUrlDeployment::getClasspathURL)
+				.toArray(URL[]::new);
+			return scanner.getClassNamesForClasspath(urls)
+				.stream()
+				.map(this::loadClass)
+				.collect(Collectors.toSet());
+		}
+
+		private Class<?> loadClass(String name) {
+			try {
+				return getClass().getClassLoader().loadClass(name);
+			} catch (ClassNotFoundException e) {
+				throw new RuntimeException(e);
+			}
 		}
 
 	}
