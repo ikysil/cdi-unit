@@ -63,7 +63,6 @@ public class WeldTestUrlDeployment implements Deployment {
 		Set<String> alternatives = new HashSet<>();
 		discoveredClasses.add(testConfiguration.getTestClass().getName());
 		Set<Class<?>> classesProcessed = new HashSet<>();
-		findMockedClassesOfTest(testConfiguration.getTestClass()).forEach(discoveryContext::ignoreBean);
 
 		discoveryContext.processBean(testConfiguration.getTestClass());
 
@@ -208,12 +207,6 @@ public class WeldTestUrlDeployment implements Deployment {
 			beansXml.getEnabledAlternativeClasses().add(createMetadata(alternative, alternative));
 		}
 
-		try {
-			Class.forName("org.easymock.EasyMockRunner");
-			extensions.add(createMetadata(new EasyMockExtension(), EasyMockExtension.class.getName()));
-		} catch (ClassNotFoundException ignore) {
-		}
-
 		extensions.add(createMetadata(new WeldSEBeanRegistrant(), WeldSEBeanRegistrant.class.getName()));
 
 		extensions.addAll(discoveryContext.getExtensions());
@@ -296,22 +289,6 @@ public class WeldTestUrlDeployment implements Deployment {
 				addClassesToProcess(classesToProcess, arg);
 			}
 		}
-	}
-
-	private Set<Class<?>> findMockedClassesOfTest(Class<?> testClass) {
-		Set<Class<?>> mockedClasses = new HashSet<>();
-
-		try {
-			for (Field field : testClass.getDeclaredFields()) {
-				if (field.isAnnotationPresent(org.easymock.Mock.class)) {
-					Class<?> type = field.getType();
-					mockedClasses.add(type);
-				}
-			}
-		} catch (NoClassDefFoundError ignore) {
-			// no EasyMock
-		}
-		return mockedClasses;
 	}
 
 	private URL getClasspathURL(Class<?> clazz) {

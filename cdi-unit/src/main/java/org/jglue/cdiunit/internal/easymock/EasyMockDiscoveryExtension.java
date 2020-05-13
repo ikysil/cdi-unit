@@ -1,17 +1,16 @@
-package org.jglue.cdiunit.internal.mockito;
+package org.jglue.cdiunit.internal.easymock;
 
 import java.lang.reflect.Field;
 
 import org.jglue.cdiunit.internal.DiscoveryExtension;
-import org.mockito.Mock;
 
-public class MockitoDiscoveryExtension implements DiscoveryExtension {
+public class EasyMockDiscoveryExtension implements DiscoveryExtension {
 
 	@Override
 	public void bootstrapExtensions(Context context) {
 		try {
-			Class.forName("org.mockito.Mock");
-			context.extension(new MockitoExtension(), MockitoDiscoveryExtension.class.getName());
+			Class.forName("org.easymock.EasyMockRunner");
+			context.extension(new EasyMockExtension(), EasyMockDiscoveryExtension.class.getName());
 		} catch (ClassNotFoundException ignore) {
 		}
 	}
@@ -24,13 +23,13 @@ public class MockitoDiscoveryExtension implements DiscoveryExtension {
 	private void ignoreMockedBeans(Context context, Class<?> beanClass) {
 		try {
 			for (Field field : beanClass.getDeclaredFields()) {
-				if (field.isAnnotationPresent(Mock.class)) {
+				if (field.isAnnotationPresent(org.easymock.Mock.class)) {
 					Class<?> type = field.getType();
 					context.ignoreBean(type);
 				}
 			}
 		} catch (NoClassDefFoundError ignore) {
-			// no Mockito
+			// no EasyMock
 		}
 	}
 
