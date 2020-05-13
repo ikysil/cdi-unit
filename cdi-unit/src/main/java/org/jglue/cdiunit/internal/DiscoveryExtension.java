@@ -1,9 +1,8 @@
 package org.jglue.cdiunit.internal;
 
-import java.lang.reflect.Type;
-import java.util.Collection;
-
 import javax.enterprise.inject.spi.Extension;
+
+import java.lang.reflect.Type;
 
 public interface DiscoveryExtension {
 
@@ -39,15 +38,15 @@ public interface DiscoveryExtension {
 
 		void enableDecorator(String className);
 
-		void enableDecorator(Type type);
+		void enableDecorator(Class<?> decoratorClass);
 
 		void enableInterceptor(String className);
 
-		void enableInterceptor(Type type);
+		void enableInterceptor(Class<?> interceptorClass);
 
 		void enableAlternativeStereotype(String className);
 
-		void enableAlternativeStereotype(Type type);
+		void enableAlternativeStereotype(Class<?> alternativeStereotypeClass);
 
 		void extension(Extension extension, String location);
 

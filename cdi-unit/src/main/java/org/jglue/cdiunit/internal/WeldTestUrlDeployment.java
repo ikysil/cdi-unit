@@ -26,7 +26,6 @@ import org.jglue.cdiunit.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.decorator.Decorator;
 import javax.enterprise.inject.Alternative;
 import javax.enterprise.inject.Instance;
 import javax.enterprise.inject.Produces;
@@ -34,7 +33,6 @@ import javax.enterprise.inject.Stereotype;
 import javax.enterprise.inject.spi.Extension;
 import javax.inject.Inject;
 import javax.inject.Provider;
-import javax.interceptor.Interceptor;
 
 import java.io.IOException;
 import java.lang.annotation.Annotation;
@@ -57,7 +55,7 @@ public class WeldTestUrlDeployment implements Deployment {
 		cdiClasspathEntries.addAll(scanner.getBeanArchives());
 		BeansXml beansXml = createBeansXml();
 
-		Context discoveryContext = new Context(testConfiguration);
+		Context discoveryContext = new Context(beansXml, testConfiguration);
 
 		Set<String> discoveredClasses = new LinkedHashSet<>();
 		Set<String> alternatives = new HashSet<>();
@@ -69,7 +67,6 @@ public class WeldTestUrlDeployment implements Deployment {
 		ServiceLoader<DiscoveryExtension> discoveryExtensions = ServiceLoader.load(DiscoveryExtension.class);
 		for (DiscoveryExtension extension: discoveryExtensions) {
 			extension.bootstrapExtensions(discoveryContext);
-			extension.process(discoveryContext, testConfiguration.getTestClass());
 		}
 
 		testConfiguration.getAdditionalClasses().forEach(discoveryContext::processBean);
@@ -83,24 +80,9 @@ public class WeldTestUrlDeployment implements Deployment {
 				if (!c.isAnnotation()) {
 					discoveredClasses.add(c.getName());
 				}
-				if (Extension.class.isAssignableFrom(c) && !Modifier.isAbstract(c.getModifiers())) {
-					try {
-//						extensions.add(createMetadata((Extension) c.getConstructor().newInstance(), c.getName()));
-						extensions.add(createMetadata((Extension) c.newInstance(), c.getName()));
-					} catch (Exception e) {
-						throw new RuntimeException(e);
-					}
-				}
-				if (c.isAnnotationPresent(Interceptor.class)) {
-					beansXml.getEnabledInterceptors().add(createMetadata(c.getName(), c.getName()));
-				}
 
-				if (c.isAnnotationPresent(Decorator.class)) {
-					beansXml.getEnabledDecorators().add(createMetadata(c.getName(), c.getName()));
-				}
-
-				if (isAlternativeStereotype(c)) {
-					beansXml.getEnabledAlternativeStereotypes().add(createMetadata(c.getName(), c.getName()));
+				for (DiscoveryExtension extension: discoveryExtensions) {
+					extension.process(discoveryContext, c);
 				}
 
 				AdditionalClasses additionalClasses = c.getAnnotation(AdditionalClasses.class);
@@ -312,6 +294,8 @@ public class WeldTestUrlDeployment implements Deployment {
 
 	private static class Context implements DiscoveryExtension.Context {
 
+		private final BeansXml beansXml;
+
 		private final TestConfiguration testConfiguration;
 
 		private final Collection<Metadata<Extension>> extensions = new ArrayList<>();
@@ -320,7 +304,8 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		private final Set<Class<?>> classesToIgnore = new LinkedHashSet<>();
 
-		public Context(final TestConfiguration testConfiguration) {
+		public Context(final BeansXml beansXml, final TestConfiguration testConfiguration) {
+			this.beansXml = beansXml;
 			this.testConfiguration = testConfiguration;
 		}
 
@@ -416,32 +401,32 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		@Override
 		public void enableDecorator(String className) {
-
+			beansXml.getEnabledDecorators().add(createMetadata(className, className));
 		}
 
 		@Override
-		public void enableDecorator(Type type) {
-
+		public void enableDecorator(Class<?> decoratorClass) {
+			enableDecorator(decoratorClass.getName());
 		}
 
 		@Override
 		public void enableInterceptor(String className) {
-
+			beansXml.getEnabledInterceptors().add(createMetadata(className, className));
 		}
 
 		@Override
-		public void enableInterceptor(Type type) {
-
+		public void enableInterceptor(Class<?> interceptorClass) {
+			enableInterceptor(interceptorClass.getName());
 		}
 
 		@Override
 		public void enableAlternativeStereotype(String className) {
-
+			beansXml.getEnabledAlternativeStereotypes().add(createMetadata(className, className));
 		}
 
 		@Override
-		public void enableAlternativeStereotype(Type type) {
-
+		public void enableAlternativeStereotype(Class<?> alternativeStereotypeClass) {
+			enableAlternativeStereotype(alternativeStereotypeClass.getName());
 		}
 
 		@Override
