@@ -23,7 +23,6 @@ import org.jboss.weld.environment.se.WeldSEBeanRegistrant;
 import org.jboss.weld.metadata.BeansXmlImpl;
 import org.jboss.weld.resources.spi.ResourceLoader;
 import org.jglue.cdiunit.*;
-import org.jglue.cdiunit.internal.easymock.EasyMockExtension;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,12 +73,8 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		testConfiguration.getAdditionalClasses().forEach(discoveryContext::processBean);
 
-		while (true) {
-			Optional<Class<?>> nextToProcess = discoveryContext.nextToProcess();
-			if (!nextToProcess.isPresent()) {
-				break;
-			}
-			final Class<?> c = nextToProcess.get();
+		while (discoveryContext.hasClassesToProcess()) {
+			final Class<?> c = discoveryContext.nextClassToProcess();
 
 			if ((isCdiClass(c) || Extension.class.isAssignableFrom(c)) && !classesProcessed.contains(c) && !c.isPrimitive()
 				&& !discoveryContext.isIgnored(c)) {
@@ -347,11 +342,11 @@ public class WeldTestUrlDeployment implements Deployment {
 			return testConfiguration;
 		}
 
-		public Optional<Class<?>> nextToProcess() {
-			if (classesToProcess.isEmpty()) {
-				return Optional.empty();
-			}
-			return Optional.of(classesToProcess.iterator().next());
+		public boolean hasClassesToProcess() {
+			return !classesToProcess.isEmpty();
+		}
+		public Class<?> nextClassToProcess() {
+			return classesToProcess.iterator().next();
 		}
 
 		public void processed(Class<?> c) {
