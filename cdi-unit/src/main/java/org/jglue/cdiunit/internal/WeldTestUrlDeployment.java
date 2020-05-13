@@ -43,6 +43,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.security.CodeSource;
 import java.util.*;
+import java.util.function.Consumer;
 
 public class WeldTestUrlDeployment implements Deployment {
 	private final BeanDeploymentArchive beanDeploymentArchive;
@@ -272,20 +273,6 @@ public class WeldTestUrlDeployment implements Deployment {
 		}
 	}
 
-	private void addClassesToProcess(Collection<Class<?>> classesToProcess, Type type) {
-		if (type instanceof Class) {
-			classesToProcess.add((Class<?>) type);
-		}
-
-		if (type instanceof ParameterizedType) {
-			ParameterizedType ptype = (ParameterizedType) type;
-			classesToProcess.add((Class<?>) ptype.getRawType());
-			for (Type arg : ptype.getActualTypeArguments()) {
-				addClassesToProcess(classesToProcess, arg);
-			}
-		}
-	}
-
 	private URL getClasspathURL(Class<?> clazz) {
 		CodeSource codeSource = clazz.getProtectionDomain()
 			.getCodeSource();
@@ -353,6 +340,20 @@ public class WeldTestUrlDeployment implements Deployment {
 			classesToProcess.remove(c);
 		}
 
+		private void process(Type type, Consumer<Class<?>> onClass) {
+			if (type instanceof Class) {
+				onClass.accept((Class<?>) type);
+			}
+
+			if (type instanceof ParameterizedType) {
+				ParameterizedType ptype = (ParameterizedType) type;
+				onClass.accept((Class<?>) ptype.getRawType());
+				for (Type arg : ptype.getActualTypeArguments()) {
+					process(arg, onClass);
+				}
+			}
+		}
+
 		@Override
 		public void processBean(String className) {
 			try {
@@ -363,17 +364,7 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		@Override
 		public void processBean(Type type) {
-			if (type instanceof Class) {
-				classesToProcess.add((Class<?>) type);
-			}
-
-			if (type instanceof ParameterizedType) {
-				ParameterizedType ptype = (ParameterizedType) type;
-				classesToProcess.add((Class<?>) ptype.getRawType());
-				for (Type arg : ptype.getActualTypeArguments()) {
-					processBean(arg);
-				}
-			}
+			process(type, classesToProcess::add);
 		}
 
 		@Override
@@ -406,17 +397,7 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		@Override
 		public void ignoreBean(Type type) {
-			if (type instanceof Class) {
-				classesToIgnore.add((Class<?>) type);
-			}
-
-			if (type instanceof ParameterizedType) {
-				ParameterizedType ptype = (ParameterizedType) type;
-				classesToIgnore.add((Class<?>) ptype.getRawType());
-				for (Type arg : ptype.getActualTypeArguments()) {
-					processBean(arg);
-				}
-			}
+			process(type, classesToIgnore::add);
 		}
 
 		public boolean isIgnored(Class<?> c) {
