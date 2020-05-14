@@ -22,19 +22,13 @@ import org.jboss.weld.bootstrap.spi.*;
 import org.jboss.weld.environment.se.WeldSEBeanRegistrant;
 import org.jboss.weld.metadata.BeansXmlImpl;
 import org.jboss.weld.resources.spi.ResourceLoader;
-import org.jglue.cdiunit.IgnoredClasses;
 import org.jglue.cdiunit.ProducesAlternative;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.enterprise.inject.Instance;
-import javax.enterprise.inject.Produces;
 import javax.enterprise.inject.spi.Extension;
-import javax.inject.Inject;
-import javax.inject.Provider;
 
 import java.io.IOException;
-import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -88,26 +82,10 @@ public class WeldTestUrlDeployment implements Deployment {
 					for (DiscoveryExtension extension: discoveryExtensions) {
 						extension.discover(discoveryContext, field);
 					}
-
-					if (field.isAnnotationPresent(Inject.class) || field.isAnnotationPresent(Produces.class)) {
-						discoveryContext.processBean(field.getGenericType());
-					}
-					if (field.getType().equals(Provider.class) || field.getType().equals(Instance.class)) {
-						discoveryContext.processBean(field.getGenericType());
-					}
 				}
 				for (Method method : c.getDeclaredMethods()) {
 					for (DiscoveryExtension extension: discoveryExtensions) {
 						extension.discover(discoveryContext, method);
-					}
-
-					if (method.isAnnotationPresent(Inject.class) || method.isAnnotationPresent(Produces.class)) {
-						for (Type param : method.getGenericParameterTypes()) {
-							discoveryContext.processBean(param);
-						}
-						// TODO PERF we might be adding classes which we already processed
-						discoveryContext.processBean(method.getGenericReturnType());
-
 					}
 				}
 			}
