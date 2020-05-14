@@ -84,11 +84,6 @@ public class WeldTestUrlDeployment implements Deployment {
 					extension.process(discoveryContext, c);
 				}
 
-				Type superClass = c.getGenericSuperclass();
-				if (superClass != null && superClass != Object.class) {
-					discoveryContext.processBean(superClass);
-				}
-
 				for (Field field : c.getDeclaredFields()) {
 					if (field.isAnnotationPresent(IgnoredClasses.class)) {
 						discoveryContext.ignoreBean(field.getGenericType());

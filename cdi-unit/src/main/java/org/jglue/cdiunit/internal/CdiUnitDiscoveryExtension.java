@@ -6,8 +6,10 @@ import javax.enterprise.inject.Alternative;
 import javax.enterprise.inject.Stereotype;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -29,6 +31,7 @@ public class CdiUnitDiscoveryExtension implements DiscoveryExtension {
 		discover(context, beanClass.getAnnotation(IgnoredClasses.class));
 		discover(context, beanClass.getAnnotation(ActivatedAlternatives.class));
 		discover(context, beanClass.getAnnotations());
+		discover(context, beanClass.getGenericSuperclass());
 	}
 
 	private void discover(Context context, AdditionalClasspaths additionalClasspaths) {
@@ -90,6 +93,12 @@ public class CdiUnitDiscoveryExtension implements DiscoveryExtension {
 
 	private boolean exceptCdiUnitAnnotations(Annotation annotation) {
 		return !annotation.annotationType().getPackage().getName().equals("org.jglue.cdiunit");
+	}
+
+	private void discover(Context context, Type genericSuperclass) {
+		Optional.ofNullable(genericSuperclass)
+			.filter(o -> o != Object.class)
+			.ifPresent(context::processBean);
 	}
 
 }
