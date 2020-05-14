@@ -2,6 +2,8 @@ package org.jglue.cdiunit.internal;
 
 import javax.enterprise.inject.spi.Extension;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.Collection;
 
@@ -11,6 +13,12 @@ public interface DiscoveryExtension {
 	}
 
 	default void process(Context context, Class<?> beanClass) {
+	}
+
+	default void discover(Context context, Field field) {
+	}
+
+	default void discover(Context context, Method method) {
 	}
 
 	interface Context {

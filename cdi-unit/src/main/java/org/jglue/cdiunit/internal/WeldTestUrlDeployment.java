@@ -85,9 +85,10 @@ public class WeldTestUrlDeployment implements Deployment {
 				}
 
 				for (Field field : c.getDeclaredFields()) {
-					if (field.isAnnotationPresent(IgnoredClasses.class)) {
-						discoveryContext.ignoreBean(field.getGenericType());
+					for (DiscoveryExtension extension: discoveryExtensions) {
+						extension.discover(discoveryContext, field);
 					}
+
 					if (field.isAnnotationPresent(Inject.class) || field.isAnnotationPresent(Produces.class)) {
 						discoveryContext.processBean(field.getGenericType());
 					}
@@ -96,9 +97,10 @@ public class WeldTestUrlDeployment implements Deployment {
 					}
 				}
 				for (Method method : c.getDeclaredMethods()) {
-					if (method.isAnnotationPresent(IgnoredClasses.class)) {
-						discoveryContext.ignoreBean(method.getGenericReturnType());
+					for (DiscoveryExtension extension: discoveryExtensions) {
+						extension.discover(discoveryContext, method);
 					}
+
 					if (method.isAnnotationPresent(Inject.class) || method.isAnnotationPresent(Produces.class)) {
 						for (Type param : method.getGenericParameterTypes()) {
 							discoveryContext.processBean(param);

@@ -6,6 +6,8 @@ import javax.enterprise.inject.Alternative;
 import javax.enterprise.inject.Stereotype;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.List;
@@ -32,6 +34,20 @@ public class CdiUnitDiscoveryExtension implements DiscoveryExtension {
 		discover(context, beanClass.getAnnotation(ActivatedAlternatives.class));
 		discover(context, beanClass.getAnnotations());
 		discover(context, beanClass.getGenericSuperclass());
+	}
+
+	@Override
+	public void discover(Context context, Field field) {
+		if (field.isAnnotationPresent(IgnoredClasses.class)) {
+			context.ignoreBean(field.getGenericType());
+		}
+	}
+
+	@Override
+	public void discover(Context context, Method method) {
+		if (method.isAnnotationPresent(IgnoredClasses.class)) {
+			context.ignoreBean(method.getGenericReturnType());
+		}
 	}
 
 	private void discover(Context context, AdditionalClasspaths additionalClasspaths) {
