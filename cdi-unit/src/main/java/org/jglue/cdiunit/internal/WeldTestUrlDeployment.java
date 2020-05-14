@@ -84,12 +84,6 @@ public class WeldTestUrlDeployment implements Deployment {
 					extension.process(discoveryContext, c);
 				}
 
-				for (Annotation a : c.getAnnotations()) {
-					if (!a.annotationType().getPackage().getName().equals("org.jglue.cdiunit")) {
-						discoveryContext.processBean(a.annotationType());
-					}
-				}
-
 				Type superClass = c.getGenericSuperclass();
 				if (superClass != null && superClass != Object.class) {
 					discoveryContext.processBean(superClass);

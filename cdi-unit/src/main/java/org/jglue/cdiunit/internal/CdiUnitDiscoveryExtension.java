@@ -5,6 +5,7 @@ import org.jglue.cdiunit.*;
 import javax.enterprise.inject.Alternative;
 import javax.enterprise.inject.Stereotype;
 
+import java.lang.annotation.Annotation;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -16,6 +17,7 @@ import java.util.stream.Collectors;
  * <li>{@link AdditionalClasses}</li>
  * <li>{@link IgnoredClasses}</li>
  * <li>{@link ActivatedAlternatives}</li>
+ * <li>meta annotations</li>
  */
 public class CdiUnitDiscoveryExtension implements DiscoveryExtension {
 
@@ -26,6 +28,7 @@ public class CdiUnitDiscoveryExtension implements DiscoveryExtension {
 		discover(context, beanClass.getAnnotation(AdditionalClasses.class));
 		discover(context, beanClass.getAnnotation(IgnoredClasses.class));
 		discover(context, beanClass.getAnnotation(ActivatedAlternatives.class));
+		discover(context, beanClass.getAnnotations());
 	}
 
 	private void discover(Context context, AdditionalClasspaths additionalClasspaths) {
@@ -76,6 +79,17 @@ public class CdiUnitDiscoveryExtension implements DiscoveryExtension {
 
 	private static boolean isAlternativeStereotype(Class<?> c) {
 		return c.isAnnotationPresent(Stereotype.class) && c.isAnnotationPresent(Alternative.class);
+	}
+
+	private void discover(Context context, Annotation[] annotations) {
+		Arrays.stream(annotations)
+			.filter(this::exceptCdiUnitAnnotations)
+			.map(Annotation::annotationType)
+			.forEach(context::processBean);
+	}
+
+	private boolean exceptCdiUnitAnnotations(Annotation annotation) {
+		return !annotation.annotationType().getPackage().getName().equals("org.jglue.cdiunit");
 	}
 
 }
