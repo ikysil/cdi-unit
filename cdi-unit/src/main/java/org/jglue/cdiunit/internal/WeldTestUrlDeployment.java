@@ -41,25 +41,16 @@ import java.util.stream.Collectors;
 
 public class WeldTestUrlDeployment implements Deployment {
 	private final BeanDeploymentArchive beanDeploymentArchive;
-	private ClasspathScanner scanner = new CachingClassGraphScanner(new DefaultBeanArchiveScanner());
-	private Collection<Metadata<Extension>> extensions = new ArrayList<>();
+	private final ClasspathScanner scanner = new CachingClassGraphScanner(new DefaultBeanArchiveScanner());
+	private final Collection<Metadata<Extension>> extensions = new ArrayList<>();
 	private static final Logger log = LoggerFactory.getLogger(WeldTestUrlDeployment.class);
-	private Set<URL> cdiClasspathEntries = new HashSet<>();
+	private final Set<URL> cdiClasspathEntries = new HashSet<>();
 	private final ServiceRegistry serviceRegistry = new SimpleServiceRegistry();
 
 	public WeldTestUrlDeployment(ResourceLoader resourceLoader, Bootstrap bootstrap, TestConfiguration testConfiguration) throws IOException {
 		cdiClasspathEntries.addAll(scanner.getBeanArchives());
-		BeansXml beansXml = createBeansXml();
-
-		Context discoveryContext = new Context(scanner, beansXml, testConfiguration);
 
 		final DefaultBootstrapDiscoveryContext bdc = new DefaultBootstrapDiscoveryContext();
-
-		Set<String> discoveredClasses = new LinkedHashSet<>();
-		discoveredClasses.add(testConfiguration.getTestClass().getName());
-		Set<Class<?>> classesProcessed = new HashSet<>();
-
-		discoveryContext.processBean(testConfiguration.getTestClass());
 
 		final ServiceLoader<DiscoveryExtension> discoveryExtensions = ServiceLoader.load(DiscoveryExtension.class);
 		discoveryExtensions.forEach(extension -> extension.bootstrap(bdc));
@@ -70,7 +61,16 @@ public class WeldTestUrlDeployment implements Deployment {
 		final BiConsumer<DiscoveryExtension.Context, Field> discoverField = bdc.discoverField;
 		final BiConsumer<DiscoveryExtension.Context, Method> discoverMethod = bdc.discoverMethod;
 
+		final BeansXml beansXml = createBeansXml();
+
+		final Context discoveryContext = new Context(scanner, beansXml, testConfiguration);
+
+		final Set<String> discoveredClasses = new LinkedHashSet<>();
+		final Set<Class<?>> classesProcessed = new HashSet<>();
+
 		discoverExtension.accept(discoveryContext);
+
+		discoveryContext.processBean(testConfiguration.getTestClass());
 
 		while (discoveryContext.hasClassesToProcess()) {
 			final Class<?> cls = discoveryContext.nextClassToProcess();
@@ -376,10 +376,13 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		Consumer<DiscoveryExtension.Context> discoverExtension = context -> {
 		};
+
 		BiConsumer<DiscoveryExtension.Context, Class<?>> discoverClass = (context, cls) -> {
 		};
+
 		BiConsumer<DiscoveryExtension.Context, Field> discoverField = (context, field) -> {
 		};
+
 		BiConsumer<DiscoveryExtension.Context, Method> discoverMethod = (context, method) -> {
 		};
 
