@@ -57,9 +57,11 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		discoveryContext.processBean(testConfiguration.getTestClass());
 
-		ServiceLoader<DiscoveryExtension> discoveryExtensions = ServiceLoader.load(DiscoveryExtension.class);
+		final ServiceLoader<DiscoveryExtension> discoveryExtensions = ServiceLoader.load(DiscoveryExtension.class);
+		final Collection<DiscoveryExtension> discoveryContextExtensions = new ArrayList<>();
 		for (DiscoveryExtension extension: discoveryExtensions) {
 			extension.bootstrapExtensions(discoveryContext);
+			discoveryContextExtensions.add(extension);
 		}
 
 		testConfiguration.getAdditionalClasses().forEach(discoveryContext::processBean);
@@ -74,19 +76,13 @@ public class WeldTestUrlDeployment implements Deployment {
 					discoveredClasses.add(c.getName());
 				}
 
-				for (DiscoveryExtension extension: discoveryExtensions) {
-					extension.process(discoveryContext, c);
-				}
+				discoveryContextExtensions.forEach(extension -> extension.process(discoveryContext, c));
 
 				for (Field field : c.getDeclaredFields()) {
-					for (DiscoveryExtension extension: discoveryExtensions) {
-						extension.discover(discoveryContext, field);
-					}
+					discoveryContextExtensions.forEach(extension -> extension.discover(discoveryContext, field));
 				}
 				for (Method method : c.getDeclaredMethods()) {
-					for (DiscoveryExtension extension: discoveryExtensions) {
-						extension.discover(discoveryContext, method);
-					}
+					discoveryContextExtensions.forEach(extension -> extension.discover(discoveryContext, method));
 				}
 			}
 
