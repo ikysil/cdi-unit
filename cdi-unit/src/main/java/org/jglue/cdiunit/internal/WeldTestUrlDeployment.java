@@ -266,7 +266,7 @@ public class WeldTestUrlDeployment implements Deployment {
 		@Override
 		public void ignoreBean(String className) {
 			try {
-				processBean(Class.forName(className));
+				ignoreBean(Class.forName(className));
 			} catch (ClassNotFoundException ignore) {
 			}
 		}
