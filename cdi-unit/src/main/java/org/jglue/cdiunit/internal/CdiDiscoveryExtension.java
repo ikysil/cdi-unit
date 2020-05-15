@@ -22,7 +22,7 @@ import java.lang.reflect.Type;
  * <li>decorators</li>
  * <li>alternative stereotypes</li>
  * <p>
- * Also discover types related to the members annotated with:
+ * Also discoverField types related to the members annotated with:
  * <li>Inject</li>
  * <li>Produces</li>
  * <li>Provider</li>
@@ -31,15 +31,20 @@ import java.lang.reflect.Type;
 public class CdiDiscoveryExtension implements DiscoveryExtension {
 
 	@Override
-	public void process(Context context, Class<?> beanClass) {
-		discoverExtensions(context, beanClass);
-		discoverInterceptors(context, beanClass);
-		discoverDecorators(context, beanClass);
-		discoverAlternativeStereotype(context, beanClass);
+	public void bootstrap(BootstrapDiscoveryContext bdc) {
+		bdc.discoverClass(this::discoverClass);
+		bdc.discoverField(this::discoverField);
+		bdc.discoverMethod(this::discoverMethod);
 	}
 
-	@Override
-	public void discover(Context context, Field field) {
+	private void discoverClass(Context context, Class<?> cls) {
+		discoverExtensions(context, cls);
+		discoverInterceptors(context, cls);
+		discoverDecorators(context, cls);
+		discoverAlternativeStereotype(context, cls);
+	}
+
+	private void discoverField(Context context, Field field) {
 		if (field.isAnnotationPresent(Inject.class) || field.isAnnotationPresent(Produces.class)) {
 			context.processBean(field.getGenericType());
 		}
@@ -48,8 +53,7 @@ public class CdiDiscoveryExtension implements DiscoveryExtension {
 		}
 	}
 
-	@Override
-	public void discover(Context context, Method method) {
+	private void discoverMethod(Context context, Method method) {
 		if (method.isAnnotationPresent(Inject.class) || method.isAnnotationPresent(Produces.class)) {
 			for (Type param : method.getGenericParameterTypes()) {
 				context.processBean(param);

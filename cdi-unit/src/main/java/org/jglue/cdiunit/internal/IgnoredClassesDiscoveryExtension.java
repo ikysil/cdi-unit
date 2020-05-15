@@ -12,19 +12,23 @@ import java.util.Arrays;
 public class IgnoredClassesDiscoveryExtension implements DiscoveryExtension {
 
 	@Override
-	public void process(Context context, Class<?> beanClass) {
-		discover(context, beanClass.getAnnotation(IgnoredClasses.class));
+	public void bootstrap(BootstrapDiscoveryContext bdc) {
+		bdc.discoverClass(this::discoverClass);
+		bdc.discoverField(this::discoverField);
+		bdc.discoverMethod(this::discoverMethod);
 	}
 
-	@Override
-	public void discover(Context context, Field field) {
+	private void discoverClass(Context context, Class<?> cls) {
+		discover(context, cls.getAnnotation(IgnoredClasses.class));
+	}
+
+	private void discoverField(Context context, Field field) {
 		if (field.isAnnotationPresent(IgnoredClasses.class)) {
 			context.ignoreBean(field.getGenericType());
 		}
 	}
 
-	@Override
-	public void discover(Context context, Method method) {
+	private void discoverMethod(Context context, Method method) {
 		if (method.isAnnotationPresent(IgnoredClasses.class)) {
 			context.ignoreBean(method.getGenericReturnType());
 		}

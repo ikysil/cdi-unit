@@ -26,13 +26,17 @@ import java.util.stream.Collectors;
 public class CdiUnitDiscoveryExtension implements DiscoveryExtension {
 
 	@Override
-	public void process(Context context, Class<?> beanClass) {
-		discover(context, beanClass.getAnnotation(AdditionalClasspaths.class));
-		discover(context, beanClass.getAnnotation(AdditionalPackages.class));
-		discover(context, beanClass.getAnnotation(AdditionalClasses.class));
-		discover(context, beanClass.getAnnotation(ActivatedAlternatives.class));
-		discover(context, beanClass.getAnnotations());
-		discover(context, beanClass.getGenericSuperclass());
+	public void bootstrap(BootstrapDiscoveryContext bdc) {
+		bdc.discoverClass(this::discoverClass);
+	}
+
+	private void discoverClass(Context context, Class<?> cls) {
+		discover(context, cls.getAnnotation(AdditionalClasspaths.class));
+		discover(context, cls.getAnnotation(AdditionalPackages.class));
+		discover(context, cls.getAnnotation(AdditionalClasses.class));
+		discover(context, cls.getAnnotation(ActivatedAlternatives.class));
+		discover(context, cls.getAnnotations());
+		discover(context, cls.getGenericSuperclass());
 	}
 
 	private void discover(Context context, AdditionalClasspaths additionalClasspaths) {

@@ -23,6 +23,7 @@ import org.jboss.weld.environment.se.WeldSEBeanRegistrant;
 import org.jboss.weld.metadata.BeansXmlImpl;
 import org.jboss.weld.resources.spi.ResourceLoader;
 import org.jglue.cdiunit.ProducesAlternative;
+import org.jglue.cdiunit.internal.DiscoveryExtension.BootstrapDiscoveryContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,6 +35,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.security.CodeSource;
 import java.util.*;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -51,6 +53,8 @@ public class WeldTestUrlDeployment implements Deployment {
 
 		Context discoveryContext = new Context(scanner, beansXml, testConfiguration);
 
+		final DefaultBootstrapDiscoveryContext bdc = new DefaultBootstrapDiscoveryContext();
+
 		Set<String> discoveredClasses = new LinkedHashSet<>();
 		discoveredClasses.add(testConfiguration.getTestClass().getName());
 		Set<Class<?>> classesProcessed = new HashSet<>();
@@ -58,35 +62,37 @@ public class WeldTestUrlDeployment implements Deployment {
 		discoveryContext.processBean(testConfiguration.getTestClass());
 
 		final ServiceLoader<DiscoveryExtension> discoveryExtensions = ServiceLoader.load(DiscoveryExtension.class);
-		final Collection<DiscoveryExtension> discoveryContextExtensions = new ArrayList<>();
-		for (DiscoveryExtension extension: discoveryExtensions) {
-			extension.bootstrapExtensions(discoveryContext);
-			discoveryContextExtensions.add(extension);
-		}
+		discoveryExtensions.forEach(extension -> extension.bootstrap(bdc));
 
-		testConfiguration.getAdditionalClasses().forEach(discoveryContext::processBean);
+		// Capture values to ignore potential updates after the bootstrap
+		final Consumer<DiscoveryExtension.Context> discoverExtension = bdc.discoverExtension;
+		final BiConsumer<DiscoveryExtension.Context, Class<?>> discoverClass = bdc.discoverClass;
+		final BiConsumer<DiscoveryExtension.Context, Field> discoverField = bdc.discoverField;
+		final BiConsumer<DiscoveryExtension.Context, Method> discoverMethod = bdc.discoverMethod;
+
+		discoverExtension.accept(discoveryContext);
 
 		while (discoveryContext.hasClassesToProcess()) {
-			final Class<?> c = discoveryContext.nextClassToProcess();
+			final Class<?> cls = discoveryContext.nextClassToProcess();
 
-			if ((isCdiClass(c) || Extension.class.isAssignableFrom(c)) && !classesProcessed.contains(c) && !c.isPrimitive()
-				&& !discoveryContext.isIgnored(c)) {
-				classesProcessed.add(c);
-				if (!c.isAnnotation()) {
-					discoveredClasses.add(c.getName());
+			if ((isCdiClass(cls) || Extension.class.isAssignableFrom(cls)) && !classesProcessed.contains(cls) && !cls.isPrimitive()
+				&& !discoveryContext.isIgnored(cls)) {
+				classesProcessed.add(cls);
+				if (!cls.isAnnotation()) {
+					discoveredClasses.add(cls.getName());
 				}
 
-				discoveryContextExtensions.forEach(extension -> extension.process(discoveryContext, c));
+				discoverClass.accept(discoveryContext, cls);
 
-				for (Field field : c.getDeclaredFields()) {
-					discoveryContextExtensions.forEach(extension -> extension.discover(discoveryContext, field));
+				for (Field field : cls.getDeclaredFields()) {
+					discoverField.accept(discoveryContext, field);
 				}
-				for (Method method : c.getDeclaredMethods()) {
-					discoveryContextExtensions.forEach(extension -> extension.discover(discoveryContext, method));
+				for (Method method : cls.getDeclaredMethods()) {
+					discoverMethod.accept(discoveryContext, method);
 				}
 			}
 
-			discoveryContext.processed(c);
+			discoveryContext.processed(cls);
 		}
 
 		beansXml.getEnabledAlternativeStereotypes().add(
@@ -221,6 +227,7 @@ public class WeldTestUrlDeployment implements Deployment {
 		public boolean hasClassesToProcess() {
 			return !classesToProcess.isEmpty();
 		}
+
 		public Class<?> nextClassToProcess() {
 			return classesToProcess.iterator().next();
 		}
@@ -361,6 +368,39 @@ public class WeldTestUrlDeployment implements Deployment {
 			} catch (ClassNotFoundException e) {
 				throw new RuntimeException(e);
 			}
+		}
+
+	}
+
+	private static class DefaultBootstrapDiscoveryContext implements BootstrapDiscoveryContext {
+
+		Consumer<DiscoveryExtension.Context> discoverExtension = context -> {
+		};
+		BiConsumer<DiscoveryExtension.Context, Class<?>> discoverClass = (context, cls) -> {
+		};
+		BiConsumer<DiscoveryExtension.Context, Field> discoverField = (context, field) -> {
+		};
+		BiConsumer<DiscoveryExtension.Context, Method> discoverMethod = (context, method) -> {
+		};
+
+		@Override
+		public void discoverExtension(Consumer<DiscoveryExtension.Context> callback) {
+			discoverExtension = discoverExtension.andThen(callback);
+		}
+
+		@Override
+		public void discoverClass(BiConsumer<DiscoveryExtension.Context, Class<?>> callback) {
+			discoverClass = discoverClass.andThen(callback);
+		}
+
+		@Override
+		public void discoverField(BiConsumer<DiscoveryExtension.Context, Field> callback) {
+			discoverField = discoverField.andThen(callback);
+		}
+
+		@Override
+		public void discoverMethod(BiConsumer<DiscoveryExtension.Context, Method> callback) {
+			discoverMethod = discoverMethod.andThen(callback);
 		}
 
 	}
